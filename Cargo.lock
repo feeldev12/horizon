@@ -109,6 +109,7 @@ dependencies = [
  "ndk-context",
  "ndk-sys",
  "num_enum",
+ "simd_cesu8",
  "thiserror 2.0.21",
 ]
 
@@ -1403,6 +1404,7 @@ dependencies = [
  "horizon-theme",
  "horizon-threads",
  "horizon-world",
+ "jni 0.21.1",
  "libc",
  "log",
  "miniz_oxide 0.8.9",
