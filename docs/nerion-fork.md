@@ -13,6 +13,10 @@ offered there as a pull request, so this fork's diff stays small.
 - `game.rs`: `LAUNCH_ARGS` (arguments from a platform with no argv) and `new_event_loop()` (the
   event loop on the Android activity).
 - `clipboard.rs`: arboard has no Android backend; the game keeps its own copy there.
+- `game.rs`/`gfx.rs`: surviving Android's suspend/resume (the surface is dropped and recreated;
+  the loading screen waits while suspended).
+- `android.rs`: GameActivity, and Nerion's launch channel (the `tok` Intent extra: sockets in
+  `<filesDir>/run/<tok>/`, pid and exit code on `ctl`, arguments in `horizon-args.json`).
 
 ## Sync with upstream
 
@@ -23,6 +27,12 @@ cargo check -p horizon-client
 tools/nerion/build-android.sh  # the Android library still builds
 git push origin main
 ```
+
+## Release for the launcher
+
+`tools/nerion/release-android.sh <n>` builds the library and publishes it as the GitHub Release
+`nerion-android-v<n>` (the `.so` and its SHA-256). The launcher pins that tag and hash in
+`src-tauri/gen/android/app/horizon.properties`.
 
 ## Build for Android
 
