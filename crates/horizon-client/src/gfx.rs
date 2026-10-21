@@ -2193,6 +2193,20 @@ impl Renderer {
     pub fn release_surface(&mut self) {
         self.surface = None;
     }
+    /// Android takes the window's surface away while the app is in the background
+    /// (`ApplicationHandler::suspended`): drop ours until `resume`.
+    pub fn suspend(&mut self) {
+        if self.offscreen.is_none() {
+            self.release_surface();
+        }
+    }
+    /// The window is back after `suspend`.
+    pub fn resume(&mut self) -> Result<()> {
+        if self.surface.is_none() && self.offscreen.is_none() {
+            self.recreate_surface()?;
+        }
+        Ok(())
+    }
     /// Reattach a window after surface loss or a failed renderer replacement.
     pub fn recreate_surface(&mut self) -> Result<()> {
         if self.offscreen.is_some() {
@@ -2721,6 +2735,10 @@ impl Renderer {
         rendered
     }
     fn draw_frame(&mut self, frame: &Frame) -> Result<bool> {
+        // Suspended (Android in the background): nothing to draw into until `resume`.
+        if self.surface.is_none() && self.offscreen.is_none() {
+            return Ok(false);
+        }
         self.arena.trim();
         self.sorted_indices.trim();
         if let Some(flat) = &mut self.flat {

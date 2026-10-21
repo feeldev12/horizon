@@ -10111,6 +10111,11 @@ impl Game<'_> {
 impl ApplicationHandler for Game<'_> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
+            // Back from the background (Android): reattach the surface `suspended` dropped.
+            if let Some(Err(e)) = self.renderer.as_mut().map(Renderer::resume) {
+                self.error = Some(e);
+                event_loop.exit();
+            }
             return;
         }
         // The Window constructor: created fullscreen when options.txt says so.
@@ -10942,6 +10947,12 @@ impl ApplicationHandler for Game<'_> {
             // MouseHandler.onMove with the pointer grabbed; applied once per frame.
             self.mouse.on_move(0.0, 0.0, x, y, true, true);
             self.last_input = Instant::now();
+        }
+    }
+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+        // Android in the background: its window has no surface until `resumed`.
+        if let Some(renderer) = self.renderer.as_mut() {
+            renderer.suspend();
         }
     }
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -12227,10 +12238,24 @@ struct Loading {
     shown: bool,
     menu: startup_menu::StartupMenu,
     error: Option<Box<dyn std::error::Error>>,
+    /// The app is in the background (Android) and has no surface: the game waits to take over.
+    suspended: bool,
+    /// The UI bundle arrived while suspended: the renderer is rebuilt on resume.
+    stale_renderer: bool,
 }
 impl Loading {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
+            // Back from the background (Android): reattach the surface `suspended` dropped.
+            self.suspended = false;
+            if std::mem::take(&mut self.stale_renderer) {
+                self.rebuild_renderer();
+                return;
+            }
+            if let Some(Err(e)) = self.renderer.as_mut().map(Renderer::resume) {
+                self.error = Some(e);
+                event_loop.exit();
+            }
             return;
         }
         // The Window constructor: created fullscreen when options.txt says so.
@@ -12298,6 +12323,15 @@ impl Loading {
         self.gui = Some(gui);
         horizon_client::ui_theme::reset_atlas();
         self.apply_menu_settings();
+        if self.suspended {
+            // No surface to build on (Android in the background): rebuild in `resumed`.
+            self.stale_renderer = true;
+            return;
+        }
+        self.rebuild_renderer();
+    }
+    /// The loading screen's renderer, rebuilt on the same device for the current UI bundle.
+    fn rebuild_renderer(&mut self) {
         let Some(window) = self.window.clone() else {
             return;
         };
@@ -12455,6 +12489,21 @@ impl ApplicationHandler for App {
             App::Ready(game) => game.resumed(event_loop),
         }
     }
+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+        match self {
+            App::Loading(loading) => {
+                loading.suspended = true;
+                if let Some(renderer) = loading.renderer.as_mut() {
+                    renderer.suspend();
+                }
+            }
+            App::Ready(game) => {
+                if let Some(renderer) = game.renderer.as_mut() {
+                    renderer.suspend();
+                }
+            }
+        }
+    }
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         match self {
             App::Loading(loading) => loading.window_event(event_loop, id, event),
@@ -12484,7 +12533,7 @@ impl ApplicationHandler for App {
                     event_loop.exit();
                     return;
                 }
-                match if loading.menu.reload_packs {
+                match if loading.menu.reload_packs || loading.suspended {
                     None
                 } else {
                     loading.loaded.take()
@@ -12550,6 +12599,8 @@ fn run_loading(
         shown: false,
         menu,
         error: None,
+        suspended: false,
+        stale_renderer: false,
     };
     let mut app = App::Loading(Box::new(loading));
     new_event_loop()?.run_app(&mut app)?;
