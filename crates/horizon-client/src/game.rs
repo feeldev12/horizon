@@ -227,6 +227,27 @@ use winit::{
     window::{CursorGrabMode, Window, WindowId},
 };
 
+/// Launch arguments set by a platform entry point that has no argv (Android).
+pub static LAUNCH_ARGS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+/// The Android activity the event loop attaches to, set by `android_main`.
+#[cfg(target_os = "android")]
+pub static ANDROID_APP: std::sync::OnceLock<winit::platform::android::activity::AndroidApp> =
+    std::sync::OnceLock::new();
+
+fn new_event_loop() -> Result<EventLoop<()>> {
+    #[cfg(target_os = "android")]
+    {
+        use winit::platform::android::EventLoopBuilderExtAndroid;
+        let app = ANDROID_APP
+            .get()
+            .ok_or("android_main did not set the activity")?;
+        Ok(EventLoop::builder().with_android_app(app.clone()).build()?)
+    }
+    #[cfg(not(target_os = "android"))]
+    Ok(EventLoop::new()?)
+}
+
 #[derive(Clone)]
 struct Options {
     resources: PathBuf,
@@ -327,7 +348,11 @@ impl Options {
             integrated: false,
         };
         let mut session_file = std::env::var("HORIZON_SESSION_FILE").ok();
-        let mut args = std::env::args().skip(1);
+        let mut args = LAUNCH_ARGS
+            .get()
+            .cloned()
+            .unwrap_or_else(|| std::env::args().skip(1).collect())
+            .into_iter();
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--help" | "-h" => {
@@ -12175,7 +12200,7 @@ fn write_report(game: &Game<'_>) -> Result<()> {
 }
 
 fn run_event_loop(mut game: Game<'_>) -> Result<()> {
-    EventLoop::new()?.run_app(&mut game)?;
+    new_event_loop()?.run_app(&mut game)?;
     write_report(&game)?;
     if let Some(e) = game.error.take() {
         return Err(e);
@@ -12527,7 +12552,7 @@ fn run_loading(
         error: None,
     };
     let mut app = App::Loading(Box::new(loading));
-    EventLoop::new()?.run_app(&mut app)?;
+    new_event_loop()?.run_app(&mut app)?;
     match app {
         App::Ready(mut game) => {
             write_report(&game)?;

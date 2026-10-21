@@ -1382,6 +1382,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "horizon-android"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "bytemuck",
+ "chrono",
+ "flate2",
+ "glam",
+ "horizon-assets",
+ "horizon-bench",
+ "horizon-client",
+ "horizon-core",
+ "horizon-friends",
+ "horizon-mods",
+ "horizon-protocol",
+ "horizon-server-files",
+ "horizon-shaderpack",
+ "horizon-telemetry",
+ "horizon-theme",
+ "horizon-threads",
+ "horizon-world",
+ "libc",
+ "log",
+ "miniz_oxide 0.8.9",
+ "naga",
+ "png",
+ "pollster",
+ "rustix 1.1.5",
+ "serde",
+ "serde_json",
+ "sha2",
+ "symphonia",
+ "toml",
+ "ureq",
+ "wgpu",
+ "winit",
+ "zip",
+]
+
+[[package]]
 name = "horizon-assets"
 version = "0.1.0"
 dependencies = [

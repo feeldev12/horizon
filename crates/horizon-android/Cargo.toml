@@ -1,0 +1,64 @@
+[package]
+name = "horizon-android"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Android entry point for the Horizon client (spike)"
+
+# The game module lives beside horizon-client's own main.rs; this root reuses it.
+[lib]
+path = "../horizon-client/src/android.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+horizon-client = { path = "../horizon-client", default-features = false }
+winit = { version = "0.30.13", features = ["android-native-activity"] }
+horizon-assets = { path = "../horizon-assets" }
+horizon-core = { path = "../horizon-core" }
+# The server thread ahead of the workers (MinecraftServer.spin's Thread.setPriority).
+horizon-threads = { path = "../horizon-threads" }
+horizon-world = { path = "../horizon-world" }
+horizon-protocol = { path = "../horizon-protocol" }
+# server.properties, eula.txt and the user lists, shared with horizon-server.
+horizon-server-files = { path = "../horizon-server-files" }
+horizon-friends = { path = "../horizon-friends" }
+# Horizon mods: sandboxed WebAssembly components, off unless installed and turned on (docs/mods.md).
+horizon-mods = { path = "../horizon-mods" }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "metal", "wgsl"] }
+pollster = "0.4"
+bytemuck = { version = "1.24", features = ["derive"] }
+glam = "0.30"
+png = "0.18"
+sha2 = "0.10.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["raw_value"] }
+# Shader packs: pack.toml, and WGSL checked before it reaches wgpu.
+toml = "1.1"
+naga = { version = "30.0.1", features = ["wgsl-in"] }
+# Java (OptiFine/Iris) shader packs, translated to WGSL.
+horizon-shaderpack = { path = "../horizon-shaderpack" }
+# Sound (ALSA on Linux); the `audio` feature.
+symphonia = { version = "0.5", default-features = false, features = ["ogg", "vorbis"] }
+miniz_oxide = "0.8"
+ab_glyph = "0.2.32"
+log = "0.4"
+chrono = { version = "0.4.42", default-features = false, features = ["clock", "std"] }
+flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs", "runtime_detection"] }
+horizon-theme = { path = "../horizon-theme" }
+# Opt-in data collection: the game keeps, the launcher sends (docs/telemetry.md).
+horizon-telemetry = { path = "../horizon-telemetry", default-features = false }
+horizon-bench = { path = "../horizon-bench" }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+# Controllers (evdev + libudev on Linux, IOKit on macOS, Windows.Gaming.Input); the `controllers` feature.
+# The DualSense's rumble, adaptive triggers and lights over HID (gilrs only reads it).
+# HTTPS to the Minecraft services (online-mode session join).
+ureq = { version = "2", default-features = false, features = ["tls"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", default-features = false, features = ["std", "time"] }
+libc = "0.2"
+
+[features]
+controllers = []
+audio = []

@@ -45,7 +45,6 @@ horizon-theme = { path = "../horizon-theme" }
 # Opt-in data collection: the game keeps, the launcher sends (docs/telemetry.md).
 horizon-telemetry = { path = "../horizon-telemetry", default-features = false }
 horizon-bench = { path = "../horizon-bench" }
-arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 # Controllers (evdev + libudev on Linux, IOKit on macOS, Windows.Gaming.Input); the `controllers` feature.
 gilrs = { version = "0.11", optional = true }
@@ -53,6 +52,10 @@ gilrs = { version = "0.11", optional = true }
 horizon-dualsense = { path = "../horizon-dualsense", optional = true }
 # HTTPS to the Minecraft services (online-mode session join).
 ureq = { version = "2", default-features = false, features = ["tls"] }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+# The system clipboard; Android has no backend (clipboard.rs keeps the game's own copy).
+arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }
 
 [target.'cfg(unix)'.dependencies]
 # The server thread's CPU time per tick (`HORIZON_SPIKES`, spans.rs).
