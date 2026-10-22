@@ -11,6 +11,7 @@
 //! run, keyed by the sha256 of their inputs and outputs recorded in the manifest, as before.
 
 pub mod artifacts;
+pub mod assemble;
 mod inventory;
 pub mod java;
 pub mod pyjson;

@@ -34,6 +34,12 @@ git push origin main
 `nerion-android-v<n>` (the `.so` and its SHA-256). The launcher pins that tag and hash in
 `src-tauri/gen/android/app/horizon.properties`.
 
+`tools/nerion/release-facts.sh <version> <n>` publishes `nerion-facts-<version>-v<n>`: the
+computed tables of a version already prepared on this computer (`horizon-prepare pack-facts`).
+A phone has no Java, so the launcher downloads that zip and runs `horizon-prepare assemble` with
+the player's client jar and asset index, which writes the same resources folder `prepare` does
+(`crates/horizon-prepare/src/assemble.rs`).
+
 ## Build for Android
 
 Needs the NDK (r28+, which aligns to 16 KB pages), `cargo-ndk` and the `aarch64-linux-android`

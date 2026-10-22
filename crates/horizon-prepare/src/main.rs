@@ -57,6 +57,11 @@ fn default_root() -> Option<PathBuf> {
 }
 
 fn main() -> ExitCode {
+    // Nerion's fork: the computed tables alone (`pack-facts`), and preparing from them without
+    // Java (`assemble`). See horizon_prepare::assemble.
+    if let Some(code) = nerion_command() {
+        return code;
+    }
     let mut options = horizon_prepare::Options {
         root: PathBuf::new(),
         import: false,
@@ -140,4 +145,48 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `pack-facts --resources DIR --out FILE.zip` and
+/// `assemble --facts FILE.zip --client-jar JAR [--asset-index INDEX.json] --out DIR`.
+fn nerion_command() -> Option<ExitCode> {
+    let mut args = std::env::args().skip(1);
+    let command = args.next()?;
+    if command != "pack-facts" && command != "assemble" {
+        return None;
+    }
+    let mut flags = std::collections::HashMap::new();
+    while let (Some(flag), Some(value)) = (args.next(), args.next()) {
+        flags.insert(flag, PathBuf::from(value));
+    }
+    let path = |name: &str| {
+        flags
+            .get(name)
+            .ok_or_else(|| format!("{command} needs {name}"))
+    };
+    let log = |line: &str| println!("{line}");
+    let result = if command == "pack-facts" {
+        path("--resources").and_then(|resources| {
+            let out = path("--out")?;
+            let count = horizon_prepare::assemble::pack_facts(resources, out)?;
+            log(&format!("{count} computed files in {}", out.display()));
+            Ok(())
+        })
+    } else {
+        path("--facts").and_then(|facts| {
+            let sources = horizon_prepare::assemble::Sources {
+                facts,
+                client_jar: path("--client-jar")?,
+                asset_index: flags.get("--asset-index").map(PathBuf::as_path),
+            };
+            horizon_prepare::assemble::assemble(&sources, path("--out")?, &log)
+        })
+    };
+    Some(match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("horizon-prepare {command}: {e}");
+            ExitCode::FAILURE
+        }
+    })
 }
