@@ -220,78 +220,7 @@ impl Game<'_> {
             "key" => {
                 let key = key_code(arg(1)?).ok_or_else(|| format!("unknown key {}", words[1]))?;
                 self.require_world()?;
-                // KeyboardHandler.keyPress: the debug keys see the physical key first.
-                let physical = key;
-                {
-                    use horizon_client::debug_keys::KeyAction;
-                    let action = arg(2)?;
-                    if action != "up" {
-                        self.physical_keys.insert(key);
-                        if self.debug_key(key, KeyAction::Press) {
-                            if action == "tap" {
-                                self.physical_keys.remove(&key);
-                                self.debug_key(key, KeyAction::Release);
-                            }
-                            return ok();
-                        }
-                    }
-                    if action == "up" {
-                        self.physical_keys.remove(&key);
-                        self.debug_key(key, KeyAction::Release);
-                    }
-                }
-                // The zoom extra sees the key as the keyboard hook does.
-                let action = arg(2)?;
-                self.extras_key(physical, action != "up", action == "repeat");
-                if action == "tap" {
-                    self.extras_key(physical, false, false);
-                }
-                // Text screens consume raw presses; releases follow key binds.
-                let typing = matches!(self.screen, Screen::Chat | Screen::Options);
-                let key = if typing && arg(2)? != "up" {
-                    key
-                } else {
-                    match self.settings.keys.translate(key) {
-                        Some(Ok(k)) => k,
-                        Some(Err(button)) => {
-                            let action = arg(2)?;
-                            if self.screen == Screen::Playing {
-                                if action != "up" {
-                                    self.play_mouse(button, true)?;
-                                }
-                                if action != "down" {
-                                    self.play_mouse(button, false)?;
-                                }
-                            }
-                            return ok();
-                        }
-                        None => return ok(),
-                    }
-                };
-                match arg(2)? {
-                    "down" => self.control_key_down(key)?,
-                    "up" => {
-                        self.keys.remove(&key);
-                        self.physical_keys.remove(&key);
-                    }
-                    // The system's auto-repeat while the key is held.
-                    "repeat" => {
-                        self.physical_keys.insert(physical);
-                        self.mapped_key(key, true, true)?;
-                    }
-                    "tap" => {
-                        self.control_key_down(key)?;
-                        self.keys.remove(&key);
-                        self.physical_keys.remove(&physical);
-                        self.debug_key(physical, horizon_client::debug_keys::KeyAction::Release);
-                    }
-                    other => {
-                        return Err(format!(
-                            "key action must be down, up, tap or repeat, not {other}"
-                        )
-                        .into());
-                    }
-                }
+                self.press_key(key, arg(2)?)?;
                 ok()
             }
             "release" => {
@@ -308,35 +237,7 @@ impl Game<'_> {
                     "middle" => MouseButton::Middle,
                     other => return Err(format!("unknown mouse button {other}").into()),
                 };
-                self.require_world()?;
-                if self.screen != Screen::Playing {
-                    return Err(format!(
-                        "mouse needs the playing screen, not {}",
-                        self.screen_name()
-                    )
-                    .into());
-                }
-                match arg(2)? {
-                    "down" => {
-                        self.extras_mouse(button, true);
-                        self.play_mouse(button, true)?
-                    }
-                    "up" => {
-                        self.extras_mouse(button, false);
-                        self.play_mouse(button, false)?
-                    }
-                    "click" => {
-                        self.extras_mouse(button, true);
-                        self.extras_mouse(button, false);
-                        self.play_mouse(button, true)?;
-                        self.play_mouse(button, false)?;
-                    }
-                    other => {
-                        return Err(
-                            format!("mouse action must be down, up or click, not {other}").into(),
-                        );
-                    }
-                }
+                self.press_mouse(button, arg(2)?)?;
                 ok()
             }
             "look" => {
@@ -485,30 +386,7 @@ impl Game<'_> {
                     .unwrap_or("")
                     .strip_prefix(' ')
                     .unwrap_or("");
-                if self.book.is_some() {
-                    self.book_type(text);
-                    return ok();
-                }
-                match self.screen {
-                    Screen::Chat => self.chat_type(text),
-                    Screen::CommandBlock => self.command_block_type(text),
-                    Screen::Options => self.ui.options.type_text(&self.gui.atlas, text),
-                    // The port, or the game rules' search and number boxes.
-                    Screen::WorldOptions if text == "\\b" => self.world_options_text(None),
-                    Screen::WorldOptions => self.world_options_text(Some(text)),
-                    Screen::Inventory if self.recipe_search_focused() => {
-                        self.recipe_text(Some(text), false)
-                    }
-                    Screen::Creative if self.creative_screen.tab().search => {
-                        // As typed: replaces a selected query, keeps the length limit.
-                        self.creative_search_edit(Some(text), false)
-                    }
-                    _ => {
-                        return Err(
-                            "type needs the chat screen (key t tap), the language search, the creative search or World Options".into(),
-                        );
-                    }
-                }
+                self.type_text(text)?;
                 ok()
             }
             "options" => {
@@ -665,7 +543,144 @@ impl Game<'_> {
         self.save_game()
     }
 
-    fn require_world(&self) -> Result<()> {
+    /// A key press as the keyboard makes it (`KeyboardHandler.keyPress`): the debug keys, the
+    /// zoom extra and key binds see it as they would a real key. `action` is down, up, repeat
+    /// or tap. Used by the `key` command and Nerion's touch overlay (`overlay_input`).
+    pub(super) fn press_key(&mut self, key: KeyCode, action: &str) -> Result<()> {
+        // KeyboardHandler.keyPress: the debug keys see the physical key first.
+        let physical = key;
+        {
+            use horizon_client::debug_keys::KeyAction;
+            let action = action;
+            if action != "up" {
+                self.physical_keys.insert(key);
+                if self.debug_key(key, KeyAction::Press) {
+                    if action == "tap" {
+                        self.physical_keys.remove(&key);
+                        self.debug_key(key, KeyAction::Release);
+                    }
+                    return Ok(());
+                }
+            }
+            if action == "up" {
+                self.physical_keys.remove(&key);
+                self.debug_key(key, KeyAction::Release);
+            }
+        }
+        // The zoom extra sees the key as the keyboard hook does.
+        let action = action;
+        self.extras_key(physical, action != "up", action == "repeat");
+        if action == "tap" {
+            self.extras_key(physical, false, false);
+        }
+        // Text screens consume raw presses; releases follow key binds.
+        let typing = matches!(self.screen, Screen::Chat | Screen::Options);
+        let key = if typing && action != "up" {
+            key
+        } else {
+            match self.settings.keys.translate(key) {
+                Some(Ok(k)) => k,
+                Some(Err(button)) => {
+                    let action = action;
+                    if self.screen == Screen::Playing {
+                        if action != "up" {
+                            self.play_mouse(button, true)?;
+                        }
+                        if action != "down" {
+                            self.play_mouse(button, false)?;
+                        }
+                    }
+                    return Ok(());
+                }
+                None => return Ok(()),
+            }
+        };
+        match action {
+            "down" => self.control_key_down(key)?,
+            "up" => {
+                self.keys.remove(&key);
+                self.physical_keys.remove(&key);
+            }
+            // The system's auto-repeat while the key is held.
+            "repeat" => {
+                self.physical_keys.insert(physical);
+                self.mapped_key(key, true, true)?;
+            }
+            "tap" => {
+                self.control_key_down(key)?;
+                self.keys.remove(&key);
+                self.physical_keys.remove(&physical);
+                self.debug_key(physical, horizon_client::debug_keys::KeyAction::Release);
+            }
+            other => {
+                return Err(
+                    format!("key action must be down, up, tap or repeat, not {other}").into(),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// A mouse button in the playing screen (the `mouse` command; `action` is down, up or click).
+    pub(super) fn press_mouse(&mut self, button: MouseButton, action: &str) -> Result<()> {
+        self.require_world()?;
+        if self.screen != Screen::Playing {
+            return Err(
+                format!("mouse needs the playing screen, not {}", self.screen_name()).into(),
+            );
+        }
+        match action {
+            "down" => {
+                self.extras_mouse(button, true);
+                self.play_mouse(button, true)?
+            }
+            "up" => {
+                self.extras_mouse(button, false);
+                self.play_mouse(button, false)?
+            }
+            "click" => {
+                self.extras_mouse(button, true);
+                self.extras_mouse(button, false);
+                self.play_mouse(button, true)?;
+                self.play_mouse(button, false)?;
+            }
+            other => {
+                return Err(format!("mouse action must be down, up or click, not {other}").into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Text typed into the open text field (chat, a book, a search box...).
+    pub(super) fn type_text(&mut self, text: &str) -> Result<()> {
+        if self.book.is_some() {
+            self.book_type(text);
+            return Ok(());
+        }
+        match self.screen {
+            Screen::Chat => self.chat_type(text),
+            Screen::CommandBlock => self.command_block_type(text),
+            Screen::Options => self.ui.options.type_text(&self.gui.atlas, text),
+            // The port, or the game rules' search and number boxes.
+            Screen::WorldOptions if text == "\\b" => self.world_options_text(None),
+            Screen::WorldOptions => self.world_options_text(Some(text)),
+            Screen::Inventory if self.recipe_search_focused() => {
+                self.recipe_text(Some(text), false)
+            }
+            Screen::Creative if self.creative_screen.tab().search => {
+                // As typed: replaces a selected query, keeps the length limit.
+                self.creative_search_edit(Some(text), false)
+            }
+            _ => {
+                return Err(
+                    "type needs the chat screen (key t tap), the language search, the creative search or World Options".into(),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn require_world(&self) -> Result<()> {
         if self.title.is_some() {
             return Err("no world open; use: open WORLD [SEED] [creative]".into());
         }

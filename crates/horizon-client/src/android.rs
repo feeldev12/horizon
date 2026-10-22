@@ -207,3 +207,35 @@ fn redirect_stdio_to_logcat() {
         }
     });
 }
+
+// ── Nerion's touch overlay (HorizonActivity's `external fun`s) ──────────────
+// The same calls its Java game gets (Nerion's android/input.rs); see game::overlay_input.
+
+#[unsafe(no_mangle)]
+extern "system" fn Java_me_feeldev_nerionmc_HorizonActivity_nativePushInputEvent(
+    _env: jni::JNIEnv,
+    _this: jni::objects::JObject,
+    kind: jni::sys::jint,
+    code: jni::sys::jint,
+    a0: jni::sys::jfloat,
+    a1: jni::sys::jfloat,
+) -> jni::sys::jboolean {
+    game::overlay_input::push(kind, code, a0, a1).into()
+}
+
+#[unsafe(no_mangle)]
+extern "system" fn Java_me_feeldev_nerionmc_HorizonActivity_nativeGetCursorMode(
+    _env: jni::JNIEnv,
+    _this: jni::objects::JObject,
+) -> jni::sys::jint {
+    game::overlay_input::cursor_mode()
+}
+
+/// `width << 32 | height` of the game's surface, `0` before the first frame.
+#[unsafe(no_mangle)]
+extern "system" fn Java_me_feeldev_nerionmc_HorizonActivity_nativeGetWindowSize(
+    _env: jni::JNIEnv,
+    _this: jni::objects::JObject,
+) -> jni::sys::jlong {
+    game::overlay_input::window_size()
+}

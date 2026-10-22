@@ -97,6 +97,7 @@ mod net_harness;
 mod nether_portal;
 mod ominous_item_spawner;
 mod options;
+pub(crate) mod overlay_input;
 mod packs;
 mod pad;
 mod pad_menu;
@@ -4351,10 +4352,13 @@ impl Game<'_> {
         };
         if capture {
             self.mouse.set_ignore_first_move();
+            // Android has no pointer to grab: Nerion's overlay (overlay_input) turns touches and a
+            // captured physical mouse into motion, so the game is captured there by definition.
             self.captured = window
                 .set_cursor_grab(CursorGrabMode::Locked)
                 .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined))
-                .is_ok();
+                .is_ok()
+                || cfg!(target_os = "android");
             if self.captured && self.focused {
                 warp(window);
             }
@@ -10956,6 +10960,8 @@ impl ApplicationHandler for Game<'_> {
         }
     }
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Nerion's touch overlay (Android): its events of this frame, before anything else.
+        self.apply_overlay_input(event_loop);
         if self.pending_save.is_some() {
             match self.poll_closing_save() {
                 Ok(true) => event_loop.exit(),
@@ -12575,6 +12581,17 @@ impl ApplicationHandler for App {
                 return;
             }
             App::Loading(loading) => {
+                // The title menu's taps from Nerion's touch overlay (Android).
+                if let Some(id) = loading.window.as_ref().map(|w| w.id()) {
+                    let size = loading
+                        .renderer
+                        .as_ref()
+                        .map(|r| [r.config.width, r.config.height]);
+                    overlay_input::drain_pointer(
+                        |event| loading.window_event(event_loop, id, event),
+                        size,
+                    );
+                }
                 loading.about_to_wait(event_loop);
                 if loading.error.is_some() {
                     event_loop.exit();
