@@ -24,13 +24,19 @@ fn android_main(app: AndroidApp) {
         .expect("the app has no internal files directory");
     let home = files.join("horizon");
     let _ = std::fs::create_dir_all(&home);
-    let launch = intent_extra(&app, "tok").and_then(|tok| match Launch::connect(&files, &tok) {
-        Ok(launch) => Some(launch),
-        Err(e) => {
-            log_to_logcat(&format!("Horizon: could not reach the launcher: {e}"));
-            None
-        }
-    });
+    let launch = match intent_extra(&app, "tok") {
+        None => None,
+        Some(tok) => match Launch::connect(&files, &tok) {
+            Ok(launch) => Some(launch),
+            Err(e) => {
+                // The launcher's run is over: Android re-creating the activity after the game
+                // process died (a crash) hands back the old Intent. Leave instead of starting a
+                // game nobody is waiting for; returning finishes the activity.
+                log_to_logcat(&format!("Horizon: the launcher's run {tok} is gone ({e}); closing"));
+                return;
+            }
+        },
+    };
     let args = match &launch {
         Some(launch) => launch.args.clone(),
         None => {
@@ -58,9 +64,32 @@ fn android_main(app: AndroidApp) {
         }
     };
     logging::flush();
-    if let Some(launch) = launch {
-        launch.exit(code);
+    // One game per process: winit builds its event loop once, so a process Android reused for the
+    // next launch couldn't play again. Close the activity first (a process that dies with its
+    // activity still showing gets the activity re-created, with the old Intent), then end.
+    if let Some(app) = game::ANDROID_APP.get() {
+        finish_activity(app);
     }
+    std::thread::sleep(Duration::from_millis(300));
+    match launch {
+        Some(launch) => launch.exit(code),
+        // SAFETY: `_exit` only ends the process.
+        None => unsafe { libc::_exit(code) },
+    }
+}
+
+/// `Activity.finish()` on the game's activity (not `finishAndRemoveTask`: it shares Nerion's task).
+fn finish_activity(app: &AndroidApp) {
+    use jni::objects::JObject;
+    // SAFETY: see `intent_extra`.
+    let Ok(vm) = (unsafe { jni::JavaVM::from_raw(app.vm_as_ptr().cast()) }) else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread() else {
+        return;
+    };
+    let activity = unsafe { JObject::from_raw(app.activity_as_ptr().cast()) };
+    let _ = env.call_method(&activity, "finish", "()V", &[]);
 }
 
 /// The launcher's side of this run: its sockets and the arguments it wrote.
