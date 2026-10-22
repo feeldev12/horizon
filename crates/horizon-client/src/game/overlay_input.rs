@@ -132,16 +132,19 @@ fn set_window_size(width: u32, height: u32) {
 /// A key is one event; a typed character is a press and its release. `None` for anything else,
 /// and off Android (see `key_event`).
 fn keyboard_events(kind: i32, code: i32) -> Option<Vec<WindowEvent>> {
-    use winit::keyboard::{Key, NativeKeyCode, PhysicalKey, SmolStr};
+    use winit::keyboard::{Key, PhysicalKey, SmolStr};
     let (physical, logical, text) = match kind {
         KEY_DOWN | KEY_UP => {
             let key = glfw_key(code)?;
             (PhysicalKey::Code(key), logical_key(key), None)
         }
         CHAR => {
-            let typed = SmolStr::new(char::from_u32(code as u32)?.encode_utf8(&mut [0; 4]));
+            let c = char::from_u32(code as u32)?;
+            let typed = SmolStr::new(c.encode_utf8(&mut [0; 4]));
+            // Some screens (Options) only read the text of a key they recognise: name the key a
+            // US keyboard types `c` with, or a key nothing is bound to for the rest (ñ, accents).
             (
-                PhysicalKey::Unidentified(NativeKeyCode::Unidentified),
+                PhysicalKey::Code(char_key(c).unwrap_or(KeyCode::F24)),
                 Key::Character(typed.clone()),
                 Some(typed),
             )
@@ -366,6 +369,46 @@ impl Game<'_> {
             self.last_input = Instant::now();
         }
     }
+}
+
+/// The key a US layout types `c` with (shifted or not), if any.
+fn char_key(c: char) -> Option<KeyCode> {
+    use KeyCode::*;
+    const LETTERS: [KeyCode; 26] = [
+        KeyA, KeyB, KeyC, KeyD, KeyE, KeyF, KeyG, KeyH, KeyI, KeyJ, KeyK, KeyL, KeyM, KeyN, KeyO,
+        KeyP, KeyQ, KeyR, KeyS, KeyT, KeyU, KeyV, KeyW, KeyX, KeyY, KeyZ,
+    ];
+    const DIGITS: [KeyCode; 10] = [
+        Digit0, Digit1, Digit2, Digit3, Digit4, Digit5, Digit6, Digit7, Digit8, Digit9,
+    ];
+    Some(match c {
+        'a'..='z' => LETTERS[c as usize - 'a' as usize],
+        'A'..='Z' => LETTERS[c as usize - 'A' as usize],
+        '0'..='9' => DIGITS[c as usize - '0' as usize],
+        ')' => Digit0,
+        '!' => Digit1,
+        '@' => Digit2,
+        '#' => Digit3,
+        '$' => Digit4,
+        '%' => Digit5,
+        '^' => Digit6,
+        '&' => Digit7,
+        '*' => Digit8,
+        '(' => Digit9,
+        ' ' => Space,
+        '-' | '_' => Minus,
+        '=' | '+' => Equal,
+        '[' | '{' => BracketLeft,
+        ']' | '}' => BracketRight,
+        '\\' | '|' => Backslash,
+        ';' | ':' => Semicolon,
+        '\'' | '"' => Quote,
+        ',' | '<' => Comma,
+        '.' | '>' => Period,
+        '/' | '?' => Slash,
+        '`' | '~' => Backquote,
+        _ => return None,
+    })
 }
 
 /// GLFW's mouse buttons (`GLFW_MOUSE_BUTTON_LEFT` = 0, right 1, middle 2).

@@ -2244,6 +2244,15 @@ impl OptionsUi {
                 return events;
             }
         }
+        // EditBox.onDrag: a drag after pressing in the search box selects, as in every other field.
+        if drag
+            && self.settings_search.focused
+            && self.scrollbar_drag_y.is_none()
+            && matches!(self.page(), Page::Video | Page::Controls | Page::KeyBinds)
+        {
+            self.settings_search.drag_to(atlas, x);
+            return events;
+        }
         if drag {
             if let Some(previous_y) = self.scrollbar_drag_y {
                 if let Some((_, thumb)) = ui::scrollbar_thumb(top, bottom, content, self.scroll) {
