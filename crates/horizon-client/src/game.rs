@@ -12482,9 +12482,29 @@ enum App {
     Loading(Box<Loading>),
     Ready(Box<Game<'static>>),
 }
-/// A finger on a touch screen (Android) as the mouse: it moves the cursor and holds the left
-/// button, so menus work by tapping. Other events pass through unchanged.
+/// Android input the game doesn't know: a finger on the screen acts as the mouse (it moves the
+/// cursor and holds the left button, so menus work by tapping), and the back button as Escape.
+/// Other events pass through unchanged.
 fn touch_as_mouse(event: WindowEvent) -> Vec<WindowEvent> {
+    // Android's back button arrives as BrowserBack: it does what Escape does (pause, close a menu).
+    if let WindowEvent::KeyboardInput {
+        device_id,
+        mut event,
+        is_synthetic,
+    } = event
+    {
+        if event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::BrowserBack)
+        {
+            event.physical_key = PhysicalKey::Code(KeyCode::Escape);
+            event.logical_key = winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape);
+            event.text = None;
+        }
+        return vec![WindowEvent::KeyboardInput {
+            device_id,
+            event,
+            is_synthetic,
+        }];
+    }
     let WindowEvent::Touch(touch) = event else {
         return vec![event];
     };
