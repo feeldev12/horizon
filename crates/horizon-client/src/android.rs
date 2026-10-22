@@ -239,3 +239,12 @@ extern "system" fn Java_me_feeldev_nerionmc_HorizonActivity_nativeGetWindowSize(
 ) -> jni::sys::jlong {
     game::overlay_input::window_size()
 }
+
+/// Minecraft's `guiScale` | `forceUnicodeFont` << 8, -1 before the first frame (the overlay's hotbar).
+#[unsafe(no_mangle)]
+extern "system" fn Java_me_feeldev_nerionmc_HorizonActivity_nativeGetGuiOptions(
+    _env: jni::JNIEnv,
+    _this: jni::objects::JObject,
+) -> jni::sys::jint {
+    game::overlay_input::gui_options()
+}

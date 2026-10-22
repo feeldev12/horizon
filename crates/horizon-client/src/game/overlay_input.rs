@@ -57,6 +57,9 @@ static RING: Ring = Ring {
 static GRABBED: AtomicBool = AtomicBool::new(false);
 /// `width << 32 | height` of the game's surface, `0` before the first frame.
 static WINDOW_SIZE: AtomicU64 = AtomicU64::new(0);
+/// Minecraft's `guiScale` (0 = auto) | `forceUnicodeFont` << 8, for the overlay to find the hotbar;
+/// -1 before the first frame.
+static GUI_OPTIONS: AtomicI32 = AtomicI32::new(-1);
 /// The overlay's virtual cursor at the last frame while playing (`f32` bits), and whether set.
 static LOOK_X: AtomicU32 = AtomicU32::new(0);
 static LOOK_Y: AtomicU32 = AtomicU32::new(0);
@@ -102,6 +105,17 @@ pub fn cursor_mode() -> i32 {
     }
 }
 
+pub fn gui_options() -> i32 {
+    GUI_OPTIONS.load(Ordering::Relaxed)
+}
+
+fn set_gui_options(settings: &horizon_client::settings::Settings) {
+    GUI_OPTIONS.store(
+        settings.gui_scale as i32 | i32::from(settings.force_unicode) << 8,
+        Ordering::Relaxed,
+    );
+}
+
 pub fn window_size() -> i64 {
     WINDOW_SIZE.load(Ordering::Relaxed) as i64
 }
@@ -111,6 +125,130 @@ fn set_window_size(width: u32, height: u32) {
         u64::from(width) << 32 | u64::from(height),
         Ordering::Relaxed,
     );
+}
+
+/// A key or a typed character as the keyboard sends it (`WindowEvent::KeyboardInput`), so every
+/// screen sees it as it sees a real key: text fields in menus and in game, key binds, the hotbar.
+/// A key is one event; a typed character is a press and its release. `None` for anything else,
+/// and off Android (see `key_event`).
+fn keyboard_events(kind: i32, code: i32) -> Option<Vec<WindowEvent>> {
+    use winit::keyboard::{Key, NativeKeyCode, PhysicalKey, SmolStr};
+    let (physical, logical, text) = match kind {
+        KEY_DOWN | KEY_UP => {
+            let key = glfw_key(code)?;
+            (PhysicalKey::Code(key), logical_key(key), None)
+        }
+        CHAR => {
+            let typed = SmolStr::new(char::from_u32(code as u32)?.encode_utf8(&mut [0; 4]));
+            (
+                PhysicalKey::Unidentified(NativeKeyCode::Unidentified),
+                Key::Character(typed.clone()),
+                Some(typed),
+            )
+        }
+        _ => return None,
+    };
+    let event = |pressed: bool, text: Option<SmolStr>| {
+        Some(WindowEvent::KeyboardInput {
+            device_id: DeviceId::dummy(),
+            event: key_event(physical, logical.clone(), text, pressed)?,
+            is_synthetic: false,
+        })
+    };
+    Some(match kind {
+        CHAR => vec![event(true, text)?, event(false, None)?],
+        _ => vec![event(kind == KEY_DOWN, None)?],
+    })
+}
+
+/// winit's `KeyEvent`. Only buildable on Android: its one non-public field, `platform_specific`,
+/// is an empty struct there (`KeyEventExtra {}` in winit 0.30), so the public fields are all of
+/// it. Elsewhere it carries data this can't fill, and the overlay doesn't run there anyway.
+#[cfg(target_os = "android")]
+#[allow(unsafe_code)]
+fn key_event(
+    physical: winit::keyboard::PhysicalKey,
+    logical: winit::keyboard::Key,
+    text: Option<winit::keyboard::SmolStr>,
+    pressed: bool,
+) -> Option<winit::event::KeyEvent> {
+    use std::{mem::MaybeUninit, ptr::addr_of_mut};
+    let mut event = MaybeUninit::<winit::event::KeyEvent>::uninit();
+    let p = event.as_mut_ptr();
+    // SAFETY: every field with bytes is written below; the only other one, `platform_specific`,
+    // is zero-sized on Android (see above), so the value is fully initialized.
+    unsafe {
+        addr_of_mut!((*p).physical_key).write(physical);
+        addr_of_mut!((*p).logical_key).write(logical);
+        addr_of_mut!((*p).text).write(text);
+        addr_of_mut!((*p).location).write(winit::keyboard::KeyLocation::Standard);
+        addr_of_mut!((*p).state).write(if pressed {
+            ElementState::Pressed
+        } else {
+            ElementState::Released
+        });
+        addr_of_mut!((*p).repeat).write(false);
+        Some(event.assume_init())
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn key_event(
+    _physical: winit::keyboard::PhysicalKey,
+    _logical: winit::keyboard::Key,
+    _text: Option<winit::keyboard::SmolStr>,
+    _pressed: bool,
+) -> Option<winit::event::KeyEvent> {
+    None
+}
+
+/// The logical key a US layout gives `key` (what winit reports alongside the physical one).
+fn logical_key(key: KeyCode) -> winit::keyboard::Key {
+    use winit::keyboard::{Key, NamedKey, SmolStr};
+    let named = match key {
+        KeyCode::Escape => NamedKey::Escape,
+        KeyCode::Enter | KeyCode::NumpadEnter => NamedKey::Enter,
+        KeyCode::Tab => NamedKey::Tab,
+        KeyCode::Backspace => NamedKey::Backspace,
+        KeyCode::Delete => NamedKey::Delete,
+        KeyCode::Insert => NamedKey::Insert,
+        KeyCode::Space => NamedKey::Space,
+        KeyCode::ArrowLeft => NamedKey::ArrowLeft,
+        KeyCode::ArrowRight => NamedKey::ArrowRight,
+        KeyCode::ArrowUp => NamedKey::ArrowUp,
+        KeyCode::ArrowDown => NamedKey::ArrowDown,
+        KeyCode::Home => NamedKey::Home,
+        KeyCode::End => NamedKey::End,
+        KeyCode::PageUp => NamedKey::PageUp,
+        KeyCode::PageDown => NamedKey::PageDown,
+        KeyCode::ShiftLeft | KeyCode::ShiftRight => NamedKey::Shift,
+        KeyCode::ControlLeft | KeyCode::ControlRight => NamedKey::Control,
+        KeyCode::AltLeft | KeyCode::AltRight => NamedKey::Alt,
+        KeyCode::CapsLock => NamedKey::CapsLock,
+        KeyCode::F1 => NamedKey::F1,
+        KeyCode::F2 => NamedKey::F2,
+        KeyCode::F3 => NamedKey::F3,
+        KeyCode::F4 => NamedKey::F4,
+        KeyCode::F5 => NamedKey::F5,
+        KeyCode::F6 => NamedKey::F6,
+        KeyCode::F7 => NamedKey::F7,
+        KeyCode::F8 => NamedKey::F8,
+        KeyCode::F9 => NamedKey::F9,
+        KeyCode::F10 => NamedKey::F10,
+        KeyCode::F11 => NamedKey::F11,
+        KeyCode::F12 => NamedKey::F12,
+        _ => {
+            // KeyA -> "a", Digit1 -> "1"; punctuation keeps its name (screens read the physical key).
+            let name = format!("{key:?}");
+            let short = name
+                .strip_prefix("Key")
+                .or_else(|| name.strip_prefix("Digit"))
+                .unwrap_or(&name)
+                .to_lowercase();
+            return Key::Character(SmolStr::new(short));
+        }
+    };
+    Key::Named(named)
 }
 
 /// A pointer event for a screen with a free cursor (menus), as the mouse would send it.
@@ -140,15 +278,23 @@ fn pointer_event(kind: i32, code: i32, a0: f32, a1: f32) -> Option<WindowEvent> 
     })
 }
 
-/// The loading screen and title menu (no game yet): only the pointer matters there.
-pub fn drain_pointer(mut each: impl FnMut(WindowEvent), size: Option<[u32; 2]>) {
+/// The loading screen and title menu (no game yet): the pointer, keys and typed text, as window
+/// events.
+pub fn drain_pointer(
+    mut each: impl FnMut(WindowEvent),
+    size: Option<[u32; 2]>,
+    settings: &horizon_client::settings::Settings,
+) {
     GRABBED.store(false, Ordering::Relaxed);
     LOOK_SET.store(false, Ordering::Relaxed);
+    set_gui_options(settings);
     if let Some([width, height]) = size {
         set_window_size(width, height);
     }
     drain(|kind, code, a0, a1| {
-        if let Some(event) = pointer_event(kind, code, a0, a1) {
+        if let Some(events) = keyboard_events(kind, code) {
+            events.into_iter().for_each(&mut each);
+        } else if let Some(event) = pointer_event(kind, code, a0, a1) {
             each(event);
         }
     });
@@ -165,6 +311,7 @@ impl Game<'_> {
         if let Some(renderer) = &self.renderer {
             set_window_size(renderer.config.width, renderer.config.height);
         }
+        set_gui_options(&self.settings);
         let in_world = self.require_world().is_ok();
         let window_id = self.window.as_ref().map(|w| w.id());
         let (mut look_x, mut look_y) = (0.0f64, 0.0f64);
@@ -179,6 +326,10 @@ impl Game<'_> {
                 }
                 LOOK_X.store(a0.to_bits(), Ordering::Relaxed);
                 LOOK_Y.store(a1.to_bits(), Ordering::Relaxed);
+            }
+            // As real keyboard events where they can be built (Android): menus' text fields too.
+            KEY_DOWN | KEY_UP | CHAR if cfg!(target_os = "android") => {
+                pointer.extend(keyboard_events(kind, code).into_iter().flatten());
             }
             KEY_DOWN | KEY_UP => {
                 if let (true, Some(key)) = (in_world, glfw_key(code)) {

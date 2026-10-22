@@ -12587,9 +12587,11 @@ impl ApplicationHandler for App {
                         .renderer
                         .as_ref()
                         .map(|r| [r.config.width, r.config.height]);
+                    let settings = loading.settings.clone();
                     overlay_input::drain_pointer(
                         |event| loading.window_event(event_loop, id, event),
                         size,
+                        &settings,
                     );
                 }
                 loading.about_to_wait(event_loop);
