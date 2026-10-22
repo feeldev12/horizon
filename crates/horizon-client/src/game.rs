@@ -12662,10 +12662,14 @@ impl Loading {
         );
         let renderer_ms = renderer_at.elapsed().as_millis();
         // Audio is created on the main thread, after the core is ready.
-        let audio = if options.dedicated.is_some() {
-            Audio::silent(&options.resources)
-        } else {
-            Audio::new(&options.resources)
+        // (Nerion's fork: the loading menu's output, given the whole registry.)
+        let audio = match self.menu.audio.take() {
+            Some(mut audio) => {
+                audio.finish_startup(&options.resources);
+                audio
+            }
+            None if options.dedicated.is_some() => Audio::silent(&options.resources),
+            None => Audio::new(&options.resources),
         };
         let pack_error = loaded.pack_error.or_else(|| self.pack_error.take());
         // The game borrows its shared resources for the process's lifetime,

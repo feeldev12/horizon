@@ -617,8 +617,27 @@ impl Audio {
     pub fn silent(root: &Path) -> Self {
         Self::with_output(root, false)
     }
+    /// Nerion's fork: the sound output for the menu shown while the game loads, before the
+    /// registry is read: only vanilla's button click (`ui.button.click`) plays.
+    /// `finish_startup` then gives it the whole registry, and the game keeps it.
+    pub fn for_startup(root: &Path) -> Self {
+        let mut registry = SoundRegistry::default();
+        registry.add_file(
+            "minecraft",
+            br#"{"ui.button.click": {"sounds": ["random/click_stereo"]}}"#,
+            &|_, _| true,
+        );
+        Self::with_registry(root, true, registry)
+    }
+    /// The loaded resources' root and its whole registry, for a `for_startup` output.
+    pub fn finish_startup(&mut self, root: &Path) {
+        self.backend.root = root.to_owned();
+        self.engine.registry = take_registry(root);
+    }
     fn with_output(root: &Path, output: bool) -> Self {
-        let registry = take_registry(root);
+        Self::with_registry(root, output, take_registry(root))
+    }
+    fn with_registry(root: &Path, output: bool, registry: SoundRegistry) -> Self {
         if output && registry.is_empty() {
             // The game then plays nothing on a working output (#1035, #1076).
             log::warn!(

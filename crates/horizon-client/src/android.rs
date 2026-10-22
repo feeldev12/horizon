@@ -294,8 +294,15 @@ fn open_audio_early() {
 fn aaudio_output(
     render: horizon_client::audio::Render,
 ) -> horizon_client::Result<Box<dyn std::any::Any>> {
+    // Still opening counts as open: the stream plays the mix from the slot once it starts.
     let early = EARLY.lock().ok().and_then(|mut e| e.take());
-    if early.is_some_and(|opened| opened.recv().unwrap_or(false)) {
+    let opening = early.is_some_and(|opened| {
+        !matches!(
+            opened.try_recv(),
+            Ok(false) | Err(std::sync::mpsc::TryRecvError::Disconnected)
+        )
+    });
+    if opening {
         if let Ok(mut slot) = RENDER.lock() {
             *slot = Some(render);
         }

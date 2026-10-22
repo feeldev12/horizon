@@ -23,6 +23,8 @@ pub(super) struct StartupMenu {
     pub pending: Option<PendingWorldEntry>,
     pub reload_packs: bool,
     pub perf: horizon_client::telemetry::Session,
+    /// Nerion's fork: the button click while loading (`Audio::for_startup`); the game keeps it.
+    pub audio: Option<Audio>,
 }
 
 impl StartupMenu {
@@ -49,6 +51,9 @@ impl StartupMenu {
             ..Default::default()
         };
         menu.root = options.resources.clone();
+        if options.dedicated.is_none() {
+            menu.audio = Some(Audio::for_startup(&options.resources));
+        }
         if let Some(error) = pack_error {
             menu.options.open_at(false, Page::Packs);
             menu.options.resource_error = Some(error.to_owned());
@@ -379,7 +384,11 @@ impl Loading {
                     let _ = std::fs::create_dir_all(&dir);
                     packs::open_folder(&dir);
                 }
-                Event::ButtonClick => {}
+                Event::ButtonClick => {
+                    if let Some(audio) = &mut self.menu.audio {
+                        audio.play_button_click();
+                    }
+                }
             }
         }
     }
@@ -531,11 +540,14 @@ impl Loading {
                             );
                             action
                         } else {
-                            let (action, _) = title.click(
+                            let (action, sound) = title.click(
                                 self.menu.cursor.0,
                                 self.menu.cursor.1,
                                 (batch.width, batch.height),
                             );
+                            if sound && let Some(audio) = &mut self.menu.audio {
+                                audio.play_button_click();
+                            }
                             title.press_field(
                                 &gui.atlas,
                                 self.menu.cursor,
@@ -702,6 +714,8 @@ mod tests {
             shown: false,
             menu: StartupMenu::default(),
             error: None,
+            suspended: false,
+            stale_renderer: false,
         }
     }
 
