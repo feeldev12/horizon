@@ -49,8 +49,14 @@ pub fn style() -> MenuStyle {
 pub fn horizon() -> bool {
     style() == MenuStyle::Horizon
 }
+/// Nerion's fork plays with vanilla's (Classic) screens only: Horizon's own menu style is off and
+/// its switch hidden. Tests keep both, so upstream's style tests still hold.
+pub fn style_switchable() -> bool {
+    cfg!(test)
+}
 pub fn set_style(s: MenuStyle) {
-    STYLE.store(u8::from(s == MenuStyle::Classic), Ordering::Relaxed);
+    let classic = s == MenuStyle::Classic || !style_switchable();
+    STYLE.store(u8::from(classic), Ordering::Relaxed);
 }
 /// Horizon-only preferences live in `horizon.txt` beside `options.txt`, so
 /// vanilla's options file stays exactly as vanilla writes it.

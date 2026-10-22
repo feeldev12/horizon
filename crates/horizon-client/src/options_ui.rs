@@ -1247,7 +1247,7 @@ impl OptionsUi {
                 // above, here rather than on the main Options screen so that
                 // one keeps vanilla's exact layout; vanilla's interface
                 // settings (GUI Scale) are on this page too.
-                if !crate::ui_theme::horizon() {
+                if !crate::ui_theme::horizon() && crate::ui_theme::style_switchable() {
                     rows.push(Row::Buttons(
                         button(
                             0.0,
