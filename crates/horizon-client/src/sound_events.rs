@@ -236,12 +236,20 @@ impl SoundRegistry {
             .filter_map(|e| e.file_name().to_str().map(str::to_owned))
             .collect();
         namespaces.sort();
+        // Vanilla's sounds without a prepared copy come from a launcher's asset store
+        // (`sound_files`), its `minecraft/sounds.json` included.
+        if !namespaces.iter().any(|n| n == "minecraft") {
+            namespaces.insert(0, "minecraft".to_owned());
+        }
         let mut registry = Self::default();
         for namespace in namespaces {
-            let Ok(text) = fs::read(assets.join(&namespace).join("sounds.json")) else {
+            let Some(text) = crate::sound_files::resolve(root, &namespace, "sounds.json")
+                .and_then(|file| fs::read(file).ok())
+            else {
                 continue;
             };
-            let exists = |ns: &str, path: &str| assets.join(ns).join(path).is_file();
+            let exists =
+                |ns: &str, path: &str| crate::sound_files::resolve(root, ns, path).is_some();
             registry.add_file(&namespace, &text, &exists);
         }
         registry

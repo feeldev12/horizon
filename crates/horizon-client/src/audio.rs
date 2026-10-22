@@ -261,7 +261,8 @@ impl Backend for MixerBackend {
             return;
         }
         let (namespace, path) = sound.path();
-        let file = self.root.join("assets").join(namespace).join(&path);
+        let file = crate::sound_files::resolve(&self.root, namespace, &path)
+            .unwrap_or_else(|| self.root.join("assets").join(namespace).join(&path));
         if sound.stream {
             // A streamed sound loops by restarting its stream.
             let mixer = self.mixer.clone();

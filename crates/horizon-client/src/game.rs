@@ -420,6 +420,10 @@ impl Options {
                         "--server" => o.server = Some(value),
                         "--name" => o.player_name = Some(value),
                         "--session-file" => session_file = Some(value),
+                        // A launcher's asset index: sounds not in the resources come from its store.
+                        "--asset-index" => {
+                            horizon_client::sound_files::set_index(std::path::Path::new(&value))
+                        }
                         "--control-socket" => o.control = Some(value.into()),
                         "--time" => o.time = Some(value.parse()?),
                         "--weather" => o.weather = Some(value),

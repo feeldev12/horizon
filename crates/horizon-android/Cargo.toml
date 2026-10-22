@@ -12,7 +12,8 @@ path = "../horizon-client/src/android.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-horizon-client = { path = "../horizon-client", default-features = false }
+# Sound through cpal (AAudio on Android); controllers stay off (Nerion's overlay is the input).
+horizon-client = { path = "../horizon-client", default-features = false, features = ["audio"] }
 # GameActivity (androidx.games:games-activity 4.4.0 in the app): it lets Android views sit over the game.
 winit = { version = "0.30.13", features = ["android-game-activity"] }
 # The activity Intent's extras (android.rs).

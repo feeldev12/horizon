@@ -163,6 +163,7 @@ pub mod skins;
 pub mod snbt;
 pub mod sound_engine;
 pub mod sound_events;
+pub mod sound_files;
 pub mod spans;
 pub mod sprint;
 pub mod sprites;
