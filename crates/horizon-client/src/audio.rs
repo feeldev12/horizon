@@ -120,6 +120,8 @@ struct Decode {
     key: String,
     file: PathBuf,
     channel: ChannelId,
+    /// When the sound was asked for (a late start is logged).
+    asked: std::time::Instant,
 }
 /// Give a channel waiting on its sound the decoded samples and start it, as
 /// the buffer future attaching and playing the source. A source stopped or
@@ -222,6 +224,52 @@ impl MixerBackend {
             f(c);
         }
     }
+    /// `start` without a channel (Nerion's fork): decode `namespace:path` into the cache ahead of
+    /// its first play.
+    fn prewarm(&mut self, namespace: &str, path: &str) {
+        let Some(file) = crate::sound_files::resolve(&self.root, namespace, path) else {
+            return;
+        };
+        self.queue(Decode {
+            key: format!("{namespace}:{path}"),
+            file,
+            channel: 0,
+            asked: std::time::Instant::now(),
+        });
+    }
+    fn queue(&mut self, job: Decode) {
+        let decoder = self.decoder.get_or_insert_with(|| {
+            let (send, receive) = std::sync::mpsc::channel::<Decode>();
+            let (mixer, cache) = (self.mixer.clone(), self.cache.clone());
+            std::thread::Builder::new()
+                .name("sound decoder".into())
+                .spawn(move || {
+                    for job in receive {
+                        // Queued twice before the first decode finished.
+                        let cached = cache.lock().ok().and_then(|mut c| c.get(&job.key));
+                        let samples = cached.unwrap_or_else(|| {
+                            let samples = decode(&job.file).map(|(s, r)| (Arc::new(s), r));
+                            if let Ok(mut c) = cache.lock() {
+                                c.insert(job.key.clone(), samples.clone());
+                            }
+                            samples
+                        });
+                        attach(&mixer, job.channel, samples, false);
+                        let late = job.asked.elapsed();
+                        if job.channel != 0 && late > std::time::Duration::from_millis(100) {
+                            log::info!(
+                                "Horizon: sound {} started {} ms after it was played",
+                                job.key,
+                                late.as_millis()
+                            );
+                        }
+                    }
+                })
+                .expect("sound decoder thread");
+            send
+        });
+        let _ = decoder.send(job);
+    }
 }
 impl Backend for MixerBackend {
     fn create(&mut self, _streaming: bool) -> Option<ChannelId> {
@@ -292,29 +340,12 @@ impl Backend for MixerBackend {
             attach(&self.mixer, channel, samples, false);
             return;
         }
-        let decoder = self.decoder.get_or_insert_with(|| {
-            let (send, receive) = std::sync::mpsc::channel::<Decode>();
-            let (mixer, cache) = (self.mixer.clone(), self.cache.clone());
-            std::thread::Builder::new()
-                .name("sound decoder".into())
-                .spawn(move || {
-                    for job in receive {
-                        // Queued twice before the first decode finished.
-                        let cached = cache.lock().ok().and_then(|mut c| c.get(&job.key));
-                        let samples = cached.unwrap_or_else(|| {
-                            let samples = decode(&job.file).map(|(s, r)| (Arc::new(s), r));
-                            if let Ok(mut c) = cache.lock() {
-                                c.insert(job.key, samples.clone());
-                            }
-                            samples
-                        });
-                        attach(&mixer, job.channel, samples, false);
-                    }
-                })
-                .expect("sound decoder thread");
-            send
+        self.queue(Decode {
+            key,
+            file,
+            channel,
+            asked: std::time::Instant::now(),
         });
-        let _ = decoder.send(Decode { key, file, channel });
     }
     /// `alSourceStop`: any state becomes stopped, an initial source too (a
     /// sound still decoding then never starts).
@@ -587,17 +618,23 @@ impl Audio {
         };
         let mut engine = SoundEngine::new(registry);
         engine.loaded = live;
+        let mut backend = MixerBackend {
+            mixer,
+            root: root.to_owned(),
+            cache: Arc::default(),
+            decoder: None,
+            next: 0,
+            live,
+        };
+        // Nerion's fork: the menu's click (ui.button.click's file) decoded before the first
+        // button, which on a phone otherwise sounded ~1 s late.
+        if live {
+            backend.prewarm("minecraft", "sounds/random/click_stereo.ogg");
+        }
         Self {
             _stream: stream,
             engine,
-            backend: MixerBackend {
-                mixer,
-                root: root.to_owned(),
-                cache: Arc::default(),
-                decoder: None,
-                next: 0,
-                live,
-            },
+            backend,
             record_heard: false,
             listener: [0.0; 3],
             listener_yaw: 0.0,
