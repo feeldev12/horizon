@@ -12482,6 +12482,31 @@ enum App {
     Loading(Box<Loading>),
     Ready(Box<Game<'static>>),
 }
+/// A finger on a touch screen (Android) as the mouse: it moves the cursor and holds the left
+/// button, so menus work by tapping. Other events pass through unchanged.
+fn touch_as_mouse(event: WindowEvent) -> Vec<WindowEvent> {
+    let WindowEvent::Touch(touch) = event else {
+        return vec![event];
+    };
+    let device_id = touch.device_id;
+    let moved = WindowEvent::CursorMoved {
+        device_id,
+        position: touch.location,
+    };
+    let button = |state| WindowEvent::MouseInput {
+        device_id,
+        state,
+        button: MouseButton::Left,
+    };
+    match touch.phase {
+        winit::event::TouchPhase::Started => vec![moved, button(ElementState::Pressed)],
+        winit::event::TouchPhase::Moved => vec![moved],
+        winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
+            vec![moved, button(ElementState::Released)]
+        }
+    }
+}
+
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         match self {
@@ -12505,9 +12530,11 @@ impl ApplicationHandler for App {
         }
     }
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
-        match self {
-            App::Loading(loading) => loading.window_event(event_loop, id, event),
-            App::Ready(game) => game.window_event(event_loop, id, event),
+        for event in touch_as_mouse(event) {
+            match self {
+                App::Loading(loading) => loading.window_event(event_loop, id, event),
+                App::Ready(game) => game.window_event(event_loop, id, event),
+            }
         }
     }
     fn device_event(&mut self, event_loop: &ActiveEventLoop, id: DeviceId, event: DeviceEvent) {
