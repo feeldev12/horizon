@@ -53,6 +53,7 @@ fn android_main(app: AndroidApp) {
     let _ = std::env::set_current_dir(&home);
     let _ = game::LAUNCH_ARGS.set(args);
     let _ = game::ANDROID_APP.set(app);
+    horizon_client::audio::set_output_opener(aaudio_output);
     logging::init(&home, "Render thread");
     crash::install(home.clone(), "client");
     let code = match game::run() {
@@ -247,4 +248,47 @@ extern "system" fn Java_me_feeldev_nerionmc_HorizonActivity_nativeGetGuiOptions(
     _this: jni::objects::JObject,
 ) -> jni::sys::jint {
     game::overlay_input::gui_options()
+}
+
+/// The sound output: AAudio in low-latency mode at the device's native 48 kHz, two bursts of
+/// buffer. cpal opens Android's default instead (44.1 kHz, resampled, ~300 ms of buffer on the
+/// test phone: sounds came well after their action).
+fn aaudio_output(
+    mut render: horizon_client::audio::Render,
+) -> horizon_client::Result<Box<dyn std::any::Any>> {
+    use ndk::audio::{
+        AudioCallbackResult, AudioDirection, AudioFormat, AudioPerformanceMode, AudioSharingMode,
+        AudioStreamBuilder,
+    };
+    let stream = AudioStreamBuilder::new()?
+        .direction(AudioDirection::Output)
+        .performance_mode(AudioPerformanceMode::LowLatency)
+        .sharing_mode(AudioSharingMode::Shared)
+        .format(AudioFormat::PCM_Float)
+        .channel_count(2)
+        .sample_rate(48_000)
+        .data_callback(Box::new(move |stream, data, frames| {
+            let channels = stream.channel_count() as usize;
+            let len = frames.max(0) as usize * channels;
+            // SAFETY: AAudio hands `frames` frames of `channels` f32 samples (PCM_Float, asked
+            // above) to fill, valid for this callback only.
+            let out = unsafe { std::slice::from_raw_parts_mut(data.cast::<f32>(), len) };
+            render(out, channels, stream.sample_rate() as u32);
+            AudioCallbackResult::Continue
+        }))
+        .error_callback(Box::new(|_, e| {
+            log::warn!("Horizon: audio stream error: {e}")
+        }))
+        .open_stream()?;
+    // Two bursts: as little latency as the device allows without running dry.
+    let _ = stream.set_buffer_size_in_frames(stream.frames_per_burst() * 2);
+    stream.request_start()?;
+    log::info!(
+        "Horizon: audio output AAudio ({} Hz, {} channels, {:?}, burst {} frames)",
+        stream.sample_rate(),
+        stream.channel_count(),
+        stream.performance_mode(),
+        stream.frames_per_burst()
+    );
+    Ok(Box::new(stream))
 }

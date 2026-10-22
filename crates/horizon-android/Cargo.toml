@@ -18,6 +18,8 @@ horizon-client = { path = "../horizon-client", default-features = false, feature
 winit = { version = "0.30.13", features = ["android-game-activity"] }
 # The activity Intent's extras (android.rs).
 jni = "0.21"
+# The sound output: AAudio in low-latency mode (android.rs `aaudio_output`), the same ndk cpal uses.
+ndk = { version = "0.9", default-features = false, features = ["audio", "api-level-26"] }
 horizon-assets = { path = "../horizon-assets" }
 horizon-core = { path = "../horizon-core" }
 # The server thread ahead of the workers (MinecraftServer.spin's Thread.setPriority).

@@ -137,10 +137,20 @@ fn attach(mixer: &Mutex<Mixer>, channel: ChannelId, samples: Samples, looping: b
 }
 /// The open output stream. A build without the `audio` feature (the server build, which must not
 /// need libasound) never has one.
-#[cfg(feature = "audio")]
-type Stream = cpal::Stream;
-#[cfg(not(feature = "audio"))]
-type Stream = std::convert::Infallible;
+/// Kept alive while the game plays: cpal's stream, or a platform output's (`set_output_opener`).
+type Stream = Box<dyn std::any::Any>;
+
+/// Renders the mix into interleaved f32 frames: `(frames, channels, sample rate)`.
+pub type Render = Box<dyn FnMut(&mut [f32], usize, u32) + Send>;
+/// A platform's own audio output, which cpal can't configure well (Android: AAudio in low-latency
+/// mode at the device's native rate, set by its entry point). It calls `Render` from its audio
+/// thread and returns the stream to keep alive.
+pub type OutputOpener = fn(Render) -> Result<Stream>;
+static OUTPUT_OPENER: std::sync::OnceLock<OutputOpener> = std::sync::OnceLock::new();
+/// Use `opener` instead of cpal for the sound output (before the game starts).
+pub fn set_output_opener(opener: OutputOpener) {
+    let _ = OUTPUT_OPENER.set(opener);
+}
 pub struct Audio {
     _stream: Option<Stream>,
     pub engine: SoundEngine,
@@ -551,6 +561,15 @@ impl Audio {
     }
     #[cfg(feature = "audio")]
     fn open(mixer: Arc<Mutex<Mixer>>) -> Result<Stream> {
+        if let Some(opener) = OUTPUT_OPENER.get() {
+            return opener(Box::new(move |data, channels, rate| {
+                if let Ok(mut m) = mixer.lock() {
+                    mix(&mut m, data, channels, rate);
+                } else {
+                    data.fill(0.0);
+                }
+            }));
+        }
         if let Some(reason) = output_disabled(|name| std::env::var_os(name)) {
             return Err(reason.into());
         }
@@ -576,7 +595,7 @@ impl Audio {
                         config.channels(),
                         config.sample_format()
                     );
-                    return Ok(stream);
+                    return Ok(Box::new(stream));
                 }
                 Err(e) => errors.push(format!("{name}: {e}")),
             }
