@@ -1076,12 +1076,21 @@ impl Title {
                     centered(atlas, batch, line, top + 17.0 + i as f32 * 9.0, u32::MAX);
                 }
             }
-            Mode::Multiplayer(screen) => screen.draw(
-                atlas,
-                batch,
-                (self.started.elapsed().as_millis() / 300).is_multiple_of(2),
-                cursor,
-            ),
+            Mode::Multiplayer(screen) => {
+                screen.draw(
+                    atlas,
+                    batch,
+                    (self.started.elapsed().as_millis() / 300).is_multiple_of(2),
+                    cursor,
+                );
+                // The focused field as an EditBox, like the world screens' fields.
+                if let (Some(field), Some(rect)) = (screen.focused_value(), screen.focused_rect(w))
+                {
+                    self.caret
+                        .borrow_mut()
+                        .draw(batch, atlas, field, rect, true, self.started);
+                }
+            }
         }
         for b in self.buttons(w, h) {
             crate::widgets::record(&b.label, [b.x, b.y, b.w, 20.0], b.enabled);
@@ -1370,8 +1379,8 @@ impl Title {
             mode => caret_field(mode, self.search_focused, &mut self.search),
         }
     }
-    /// Whether the focused field edits at its cursor (every field but the
-    /// server screens', which still append).
+    /// Whether the focused field edits at its cursor (all of them, the server
+    /// screens' too).
     pub fn has_caret_field(&mut self) -> bool {
         caret_field(&mut self.mode, self.search_focused, &mut self.search).is_some()
     }
@@ -1391,15 +1400,9 @@ impl Title {
     }
     /// EditBox.charTyped / insertText at the cursor.
     pub fn type_text(&mut self, text: &str) {
-        if let Mode::Multiplayer(screen) = &mut self.mode {
-            return screen.type_text(text);
-        }
         self.edit_field(|edit| edit.insert_text(text));
     }
     pub fn backspace(&mut self) {
-        if let Mode::Multiplayer(screen) = &mut self.mode {
-            return screen.backspace();
-        }
         self.field_key(winit::keyboard::KeyCode::Backspace, false, false);
     }
     /// EditBox.keyPressed: moving and deleting in the focused field.
@@ -1427,6 +1430,7 @@ impl Title {
             Mode::Create { focus, options, .. } => create_world::field_rect(w, h, options.tab)
                 .filter(|(id, _)| id == focus)
                 .map(|(_, rect)| rect),
+            Mode::Multiplayer(screen) => screen.focused_rect(w),
             _ => None,
         }
     }
@@ -1630,6 +1634,8 @@ fn caret_field<'a>(
             1 => Some((WORLD_SEED, seed, 32)),
             _ => None,
         },
+        // The server screens' fields (address, name, invite code) are EditBoxes too.
+        Mode::Multiplayer(screen) => screen.focused_text(),
         _ => None,
     }
 }

@@ -589,6 +589,10 @@ impl Screen {
             rgba(160, 160, 160, 255),
             true,
         );
+        // The focused box is the title's EditBox (`Title::draw`): cursor, selection, scrolling.
+        if focused {
+            return;
+        }
         batch.fill(
             atlas,
             x,
@@ -1274,6 +1278,32 @@ impl Screen {
         };
         let max = self.max_length();
         self.focused_field().map(|f| (id, f, max))
+    }
+    /// The focused field's text, as `focused_text` without editing (drawing it).
+    pub fn focused_value(&self) -> Option<(crate::clipboard::FieldId, &str, usize)> {
+        let (id, value) = match self {
+            Self::Edit { name, focus: 0, .. } => (("server.name", 0), name),
+            Self::Edit { address, .. } => (("server.address", 0), address),
+            Self::Direct { address } => (("server.direct", 0), address),
+            Self::Friend { code, focus: 0, .. } => (("friend.code", 0), code),
+            Self::Friend { relay, .. } => (("friend.relay", 0), relay),
+            _ => return None,
+        };
+        Some((id, value.as_str(), self.max_length()))
+    }
+    /// The focused field's box in GUI pixels for a screen `width` wide (where `field` draws it).
+    pub fn focused_rect(&self, width: f32) -> Option<[f32; 4]> {
+        let box_y = match self {
+            // ManageServerScreen: boxes at 66 and 106.
+            Self::Edit { focus: 0, .. } => 66.0,
+            Self::Edit { .. } => 106.0,
+            // DirectJoinServerScreen: the box at 116.
+            Self::Direct { .. } => 116.0,
+            Self::Friend { focus: 0, .. } => 64.0,
+            Self::Friend { .. } => 105.0,
+            _ => return None,
+        };
+        Some([(width.ceil() / 2.0).floor() - 100.0, box_y, 200.0, 20.0])
     }
     /// Invite codes with IPv6 and a relay run past a server address's 128.
     fn max_length(&self) -> usize {
