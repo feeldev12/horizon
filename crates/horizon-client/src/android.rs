@@ -54,6 +54,7 @@ fn android_main(app: AndroidApp) {
     let _ = game::LAUNCH_ARGS.set(args);
     let _ = game::ANDROID_APP.set(app);
     horizon_client::audio::set_output_opener(aaudio_output);
+    open_audio_early();
     logging::init(&home, "Render thread");
     crash::install(home.clone(), "client");
     let code = match game::run() {
@@ -250,10 +251,63 @@ extern "system" fn Java_me_feeldev_nerionmc_HorizonActivity_nativeGetGuiOptions(
     game::overlay_input::gui_options()
 }
 
+/// What the early AAudio stream plays: the game's mix once it hands it over, silence before.
+static RENDER: std::sync::Mutex<Option<horizon_client::audio::Render>> =
+    std::sync::Mutex::new(None);
+/// Whether the early stream opened (sent once by its thread).
+static EARLY: std::sync::Mutex<Option<std::sync::mpsc::Receiver<bool>>> =
+    std::sync::Mutex::new(None);
+
+/// Open and start the sound output while the game loads: AAudio takes ~0.4 s, which otherwise
+/// froze the frame between the loading screen and the menu. Its thread keeps the stream.
+fn open_audio_early() {
+    let (sent, received) = std::sync::mpsc::channel();
+    if let Ok(mut early) = EARLY.lock() {
+        *early = Some(received);
+    }
+    let _ = std::thread::Builder::new()
+        .name("audio-open".into())
+        .spawn(move || {
+            let render = Box::new(|out: &mut [f32], channels: usize, rate: u32| {
+                match RENDER.lock().ok().as_deref_mut().and_then(Option::as_mut) {
+                    Some(render) => render(out, channels, rate),
+                    None => out.fill(0.0),
+                }
+            });
+            match open_aaudio(render) {
+                Ok(stream) => {
+                    let _ = sent.send(true);
+                    let _stream = stream;
+                    loop {
+                        std::thread::park();
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Horizon: early audio output failed: {e}");
+                    let _ = sent.send(false);
+                }
+            }
+        });
+}
+
+/// `audio::set_output_opener`: the early stream if it opened, else a stream of its own.
+fn aaudio_output(
+    render: horizon_client::audio::Render,
+) -> horizon_client::Result<Box<dyn std::any::Any>> {
+    let early = EARLY.lock().ok().and_then(|mut e| e.take());
+    if early.is_some_and(|opened| opened.recv().unwrap_or(false)) {
+        if let Ok(mut slot) = RENDER.lock() {
+            *slot = Some(render);
+        }
+        return Ok(Box::new(()));
+    }
+    open_aaudio(render)
+}
+
 /// The sound output: AAudio in low-latency mode at the device's native 48 kHz, two bursts of
 /// buffer. cpal opens Android's default instead (44.1 kHz, resampled, ~300 ms of buffer on the
 /// test phone: sounds came well after their action).
-fn aaudio_output(
+fn open_aaudio(
     mut render: horizon_client::audio::Render,
 ) -> horizon_client::Result<Box<dyn std::any::Any>> {
     use ndk::audio::{

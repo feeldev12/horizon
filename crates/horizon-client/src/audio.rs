@@ -154,6 +154,33 @@ static OUTPUT_OPENER: std::sync::OnceLock<OutputOpener> = std::sync::OnceLock::n
 pub fn set_output_opener(opener: OutputOpener) {
     let _ = OUTPUT_OPENER.set(opener);
 }
+/// The sound registry being read on a thread of its own (Nerion's fork, `preload_registry`).
+type PendingRegistry = (PathBuf, std::thread::JoinHandle<SoundRegistry>);
+static PRELOADED: Mutex<Option<PendingRegistry>> = Mutex::new(None);
+/// Start reading `root`'s sound registry (`sounds.json`, every file checked) while the game
+/// loads; `Audio::new` for the same root takes it instead of reading it on the main thread
+/// (~0.7 s on a phone, part of the frozen frame between the loading screen and the menu).
+pub fn preload_registry(root: &Path) {
+    let owned = root.to_owned();
+    let Ok(handle) = std::thread::Builder::new()
+        .name("sound-registry".into())
+        .spawn(move || SoundRegistry::load(&owned))
+    else {
+        return;
+    };
+    if let Ok(mut pending) = PRELOADED.lock() {
+        *pending = Some((root.to_owned(), handle));
+    }
+}
+fn take_registry(root: &Path) -> SoundRegistry {
+    let pending = PRELOADED.lock().ok().and_then(|mut p| p.take());
+    match pending {
+        Some((preloaded, handle)) if preloaded == root => handle
+            .join()
+            .unwrap_or_else(|_| SoundRegistry::load(root)),
+        _ => SoundRegistry::load(root),
+    }
+}
 pub struct Audio {
     _stream: Option<Stream>,
     pub engine: SoundEngine,
@@ -591,7 +618,7 @@ impl Audio {
         Self::with_output(root, false)
     }
     fn with_output(root: &Path, output: bool) -> Self {
-        let registry = SoundRegistry::load(root);
+        let registry = take_registry(root);
         if output && registry.is_empty() {
             // The game then plays nothing on a working output (#1035, #1076).
             log::warn!(

@@ -232,6 +232,7 @@ pub(super) fn spawn_loader(
                 },
             );
             let root = mods::content_root(&root, &settings.mods.enabled, &dev_mods);
+            horizon_client::audio::preload_registry(&root);
             let result = load_resources(
                 root,
                 &vanilla_root,
