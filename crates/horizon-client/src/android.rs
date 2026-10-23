@@ -1,5 +1,7 @@
 //! Android entry point (horizon-android). `GameActivity` loads this library and calls
-//! `android_main`, which runs the same game as main.rs with `<filesDir>/horizon` as its home.
+//! `android_main`, which runs the same game as main.rs with `<filesDir>/horizon` as its home, or
+//! the folder a `--home PATH` argument names (Nerion: each instance's own folder, so instances
+//! don't share worlds and options; the prepared resources stay shared through `--resources`).
 //!
 //! Started by Nerion's launcher, the activity's Intent carries `tok`: the launcher has bound four
 //! unix sockets in `<filesDir>/run/<tok>/` (`ctl`, `in`, `out`, `err`, the protocol its Java game
@@ -37,7 +39,7 @@ fn android_main(app: AndroidApp) {
             }
         },
     };
-    let args = match &launch {
+    let mut args: Vec<String> = match &launch {
         Some(launch) => launch.args.clone(),
         None => {
             redirect_stdio_to_logcat();
@@ -47,6 +49,13 @@ fn android_main(app: AndroidApp) {
                 .map(String::from)
                 .collect()
         }
+    };
+    let home = match take_home(&mut args) {
+        Some(own) => {
+            let _ = std::fs::create_dir_all(&own);
+            own
+        }
+        None => home,
     };
     // SAFETY: nothing else runs yet; the game reads HORIZON_HOME for its home.
     unsafe { std::env::set_var("HORIZON_HOME", &home) };
@@ -352,4 +361,12 @@ fn open_aaudio(
         stream.frames_per_burst()
     );
     Ok(Box::new(stream))
+}
+
+/// Removes `--home PATH` from the arguments (the game itself doesn't know it) and returns PATH.
+fn take_home(args: &mut Vec<String>) -> Option<std::path::PathBuf> {
+    let at = args.iter().position(|a| a == "--home")?;
+    let path = args.get(at + 1).cloned();
+    args.drain(at..(at + 2).min(args.len()));
+    path.filter(|p| !p.is_empty()).map(std::path::PathBuf::from)
 }
