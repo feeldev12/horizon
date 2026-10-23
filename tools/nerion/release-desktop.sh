@@ -20,7 +20,7 @@ esac
 cargo build --profile fast -p horizon-client
 out="target/nerion-release-desktop"
 rm -rf "$out" && mkdir -p "$out"
-name="horizon-client-$os-$arch${exe#horizon-client}"
+name="nerion-nativo-$os-$arch${exe#horizon-client}"
 cp "target/fast/$exe" "$out/$name"
 sha=$(sha256sum "$out/$name" | cut -d' ' -f1)
 echo "$sha  $name" > "$out/$name.sha256"

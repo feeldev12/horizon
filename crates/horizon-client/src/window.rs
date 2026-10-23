@@ -321,10 +321,11 @@ impl FullscreenState {
     }
 }
 
-/// Horizon's icon for the window's title bar and the task bar (X11 and Windows; Wayland takes
+/// Nerion's icon for the window's title bar and the task bar (X11 and Windows; Wayland takes
 /// it from the `horizon.desktop` entry, macOS from the app bundle). `None` if it can't be read.
 pub fn icon() -> Option<winit::window::Icon> {
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(horizon_theme::ICON_PNG));
+    const NERION_ICON_PNG: &[u8] = include_bytes!("../../../packaging/icons/nerion-256.png");
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(NERION_ICON_PNG));
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut reader = decoder.read_info().ok()?;
     let mut bytes = vec![0; reader.output_buffer_size()?];

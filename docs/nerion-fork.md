@@ -35,7 +35,7 @@ git push origin main
 `src-tauri/gen/android/app/horizon.properties`.
 
 `tools/nerion/release-desktop.sh <n>` builds `horizon-client` for the computer it runs on and
-adds `horizon-client-<os>-<arch>[.exe]` (and its SHA-256) to the release `nerion-desktop-v<n>`;
+adds `nerion-nativo-<os>-<arch>[.exe]` (the name players see in Windows) (and its SHA-256) to the release `nerion-desktop-v<n>`;
 run it once per OS. The launcher pins each binary in `src-tauri/horizon.properties`.
 
 `tools/nerion/release-facts.sh <version> <n>` publishes `nerion-facts-<version>-v<n>`: the

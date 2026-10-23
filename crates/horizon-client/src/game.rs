@@ -10349,6 +10349,12 @@ impl ApplicationHandler for Game<'_> {
         let attributes = Window::default_attributes()
             .with_title(horizon_client::BRAND)
             .with_window_icon(horizon_client::window::icon());
+        // The task bar takes its own (larger) icon on Windows; without it the button had none.
+        #[cfg(windows)]
+        let attributes = winit::platform::windows::WindowAttributesExtWindows::with_taskbar_icon(
+            attributes,
+            horizon_client::window::icon(),
+        );
         // Wayland names the window by its app id, which the horizon.desktop entry matches.
         #[cfg(target_os = "linux")]
         let attributes = winit::platform::wayland::WindowAttributesExtWayland::with_name(
@@ -12495,6 +12501,12 @@ impl Loading {
         let attributes = Window::default_attributes()
             .with_title(horizon_client::BRAND)
             .with_window_icon(horizon_client::window::icon());
+        // The task bar takes its own (larger) icon on Windows; without it the button had none.
+        #[cfg(windows)]
+        let attributes = winit::platform::windows::WindowAttributesExtWindows::with_taskbar_icon(
+            attributes,
+            horizon_client::window::icon(),
+        );
         // Wayland names the window by its app id, which the horizon.desktop entry matches.
         #[cfg(target_os = "linux")]
         let attributes = winit::platform::wayland::WindowAttributesExtWayland::with_name(
