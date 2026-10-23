@@ -1,6 +1,10 @@
 //! Horizon native client: resources, world streaming, rendering and the
 //! bindings between the validated simulation pieces and the game loop.
 #![forbid(unsafe_code)]
+
+/// The name players see (window title, title screen, messages): Nerion ships this engine as
+/// "Nerion Nativo". Logs and internal labels keep "Horizon".
+pub const BRAND: &str = "Nerion Nativo";
 pub mod advancements;
 pub mod ambience;
 pub mod animate_tick;

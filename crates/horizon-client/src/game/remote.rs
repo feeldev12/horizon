@@ -4068,7 +4068,7 @@ impl Game<'_> {
                 self.send(S::ContainerClose(play::ContainerClose {
                     container: p.container,
                 }));
-                self.chat_line(format!("(Horizon cannot show {menu} screens yet)"));
+                self.chat_line(format!("({} cannot show {menu} screens yet)", horizon_client::BRAND));
                 return;
             }
         };

@@ -68,7 +68,7 @@ impl Report {
     pub fn text(&self) -> String {
         let comment = COMMENTS[self.time.timestamp().rem_euclid(COMMENTS.len() as i64) as usize];
         let mut out = String::new();
-        let _ = writeln!(out, "---- Horizon Crash Report ----");
+        let _ = writeln!(out, "---- {} Crash Report ----", crate::BRAND);
         let _ = writeln!(out, "// {comment}\n");
         let _ = writeln!(out, "Time: {}", self.time.format("%Y-%m-%d %H:%M:%S"));
         let _ = writeln!(out, "Description: {}\n", self.description);
@@ -245,7 +245,7 @@ fn memory() -> String {
 /// The report's details: Horizon's and the machine's, then what the game set as it ran.
 pub fn system_details() -> Vec<(String, String)> {
     let mut out = vec![
-        ("Horizon Version".to_owned(), version()),
+        (format!("{} Version", crate::BRAND), version()),
         (
             "Minecraft Version".to_owned(),
             horizon_core::VANILLA_VERSION.to_owned(),
@@ -563,7 +563,7 @@ mod tests {
     fn the_report_reads_like_vanillas() {
         let text = report().text();
         let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(lines[0], "---- Horizon Crash Report ----");
+        assert_eq!(lines[0], format!("---- {} Crash Report ----", crate::BRAND));
         assert!(lines[1].starts_with("// "));
         assert_eq!(lines[3], "Time: 2026-10-14 09:05:07");
         assert_eq!(lines[4], "Description: Unexpected error");

@@ -10347,7 +10347,7 @@ impl ApplicationHandler for Game<'_> {
         let fullscreen = self.settings.fullscreen;
         self.fullscreen = horizon_client::window::FullscreenState::new(fullscreen);
         let attributes = Window::default_attributes()
-            .with_title("Horizon")
+            .with_title(horizon_client::BRAND)
             .with_window_icon(horizon_client::window::icon());
         // Wayland names the window by its app id, which the horizon.desktop entry matches.
         #[cfg(target_os = "linux")]
@@ -12493,7 +12493,7 @@ impl Loading {
         let fullscreen = self.settings.fullscreen;
         self.fullscreen = horizon_client::window::FullscreenState::new(fullscreen);
         let attributes = Window::default_attributes()
-            .with_title("Horizon")
+            .with_title(horizon_client::BRAND)
             .with_window_icon(horizon_client::window::icon());
         // Wayland names the window by its app id, which the horizon.desktop entry matches.
         #[cfg(target_os = "linux")]
