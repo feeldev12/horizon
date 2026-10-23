@@ -34,6 +34,10 @@ git push origin main
 `nerion-android-v<n>` (the `.so` and its SHA-256). The launcher pins that tag and hash in
 `src-tauri/gen/android/app/horizon.properties`.
 
+`tools/nerion/release-desktop.sh <n>` builds `horizon-client` for the computer it runs on and
+adds `horizon-client-<os>-<arch>[.exe]` (and its SHA-256) to the release `nerion-desktop-v<n>`;
+run it once per OS. The launcher pins each binary in `src-tauri/horizon.properties`.
+
 `tools/nerion/release-facts.sh <version> <n>` publishes `nerion-facts-<version>-v<n>`: the
 computed tables of a version already prepared on this computer (`horizon-prepare pack-facts`).
 A phone has no Java, so the launcher downloads that zip and runs `horizon-prepare assemble` with
