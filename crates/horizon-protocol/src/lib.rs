@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 pub mod buf;
 pub mod chunk;
+pub mod component_wire;
 pub mod connection;
 pub mod crypto;
 pub mod entity_data;

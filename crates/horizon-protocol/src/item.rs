@@ -30,8 +30,9 @@ pub mod component {
     pub const MAP_ID: i32 = 48;
 }
 
-/// The value of one patched data component. Components whose stream codec
-/// Horizon does not implement make the whole stack (and packet) undecodable.
+/// The value of one patched data component. Components Horizon doesn't interpret are walked by
+/// `component_wire` and kept as their raw bytes (Nerion); only a type that is never sent makes
+/// the whole stack (and packet) undecodable.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Component {
     Int(i32),
@@ -52,9 +53,11 @@ pub enum Component {
         hide: bool,
         hidden: Vec<i32>,
     },
+    /// A component kept as it came, written back byte for byte (see `component_wire`).
+    Raw(Vec<u8>),
 }
 impl Component {
-    fn read(kind: i32, r: &mut Reader) -> Result<Self> {
+    pub(crate) fn read(kind: i32, r: &mut Reader) -> Result<Self> {
         use component::*;
         Ok(match kind {
             MAX_STACK_SIZE | MAX_DAMAGE | DAMAGE | RARITY | REPAIR_COST | MAP_ID => {
@@ -102,7 +105,16 @@ impl Component {
                     hidden: (0..n).map(|_| r.varint()).collect::<Result<_>>()?,
                 }
             }
-            other => return Err(Error::new(format!("unsupported item component {other}"))),
+            other => {
+                let start = r.position();
+                match crate::component_wire::skip(other, r) {
+                    Some(walked) => {
+                        walked?;
+                        Self::Raw(r.since(start).to_vec())
+                    }
+                    None => return Err(Error::new(format!("unsupported item component {other}"))),
+                }
+            }
         })
     }
     fn write(&self, kind: i32, w: &mut Writer) {
@@ -144,6 +156,7 @@ impl Component {
                 w.varint(hidden.len() as i32);
                 hidden.iter().for_each(|h| w.varint(*h));
             }
+            Self::Raw(bytes) => w.bytes(bytes),
         }
     }
 }
@@ -368,6 +381,64 @@ mod tests {
     #[test]
     fn unknown_components_are_errors() {
         let bytes = [1, 5, 1, 0, 99];
+        assert!(Slot::read(&mut Reader::new(&bytes)).is_err());
+    }
+
+    /// One stack (count 1, item 5) carrying `component` with `body`: read whole, kept raw and
+    /// written back byte for byte.
+    fn raw_round_trip(component: i32, body: &[u8]) {
+        let mut bytes = vec![1, 5, 1, 0];
+        crate::buf::write_varint(&mut bytes, component);
+        bytes.extend_from_slice(body);
+        let mut r = Reader::new(&bytes);
+        let stack = Slot::read(&mut r).unwrap().unwrap();
+        assert_eq!(r.remaining(), 0, "component {component} left bytes behind");
+        assert_eq!(
+            stack.component(component),
+            Some(&Component::Raw(body.to_vec()))
+        );
+        let mut w = Writer::new();
+        Slot::write(&Some(stack), &mut w);
+        assert_eq!(w.data, bytes);
+    }
+
+    #[test]
+    fn components_horizon_does_not_interpret_are_kept_raw() {
+        // potion_contents: potion 3, no colour, no custom effects, no name
+        raw_round_trip(53, &[1, 3, 0, 0, 0]);
+        // fireworks: flight 2, one explosion (shape 1, colours [0x00FF0000], no fades, trail)
+        raw_round_trip(71, &[2, 1, 1, 1, 0, 0xFF, 0, 0, 0, 1, 0]);
+        // profile: a partial profile named "Notch", no uuid, no properties, empty skin patch
+        raw_round_trip(
+            72,
+            &[0, 1, 5, b'N', b'o', b't', b'c', b'h', 0, 0, 0, 0, 0, 0],
+        );
+        // banner_patterns: one layer, registry pattern 7 (id + 1 = 8), red (14)
+        raw_round_trip(74, &[1, 8, 14]);
+        // container: one slot holding 3 of item 9 with no components, then an empty slot
+        raw_round_trip(77, &[2, 1, 9, 3, 0, 0, 0]);
+        // attribute_modifiers: attribute 2, id "a:b", amount 5.0, add_value, mainhand, hidden
+        let mut entry = vec![1, 2, 3, b'a', b':', b'b'];
+        entry.extend_from_slice(&5.0f64.to_be_bytes());
+        entry.extend_from_slice(&[0, 1, 1]);
+        raw_round_trip(16, &entry);
+        // consumable: 1.6 s, eat, registry sound 5 (+1), particles, one clear_all_effects
+        let mut consumable = 1.6f32.to_be_bytes().to_vec();
+        consumable.extend_from_slice(&[1, 6, 1, 1, 2]);
+        raw_round_trip(24, &consumable);
+        // tool: one rule (blocks tag "a:b", speed 8.0, no drops flag), 1.0, 1, true
+        let mut tool = vec![1, 0, 3, b'a', b':', b'b', 1];
+        tool.extend_from_slice(&8.0f32.to_be_bytes());
+        tool.push(0);
+        tool.extend_from_slice(&1.0f32.to_be_bytes());
+        tool.extend_from_slice(&[1, 1]);
+        raw_round_trip(28, &tool);
+    }
+
+    #[test]
+    fn components_never_sent_stay_errors() {
+        // intangible_projectile (22) has no stream codec: a server never sends it
+        let bytes = [1, 5, 1, 0, 22];
         assert!(Slot::read(&mut Reader::new(&bytes)).is_err());
     }
 }
